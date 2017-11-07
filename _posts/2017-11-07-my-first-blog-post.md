@@ -5,4 +5,4 @@ date: 2017-11-07
 ---
 
 Yayy!!. Successfully created static website with blog section - powered by [Jekyll](http://jekyllrb.com) and its damn easy.
-<center><em><p>spanThis text is centered.  And clean.  Jai Shri Ram.</p></em></center>
+<center><em><p>This text is centered.  And clean.  Jai Shri Ram.</p></em></center>
