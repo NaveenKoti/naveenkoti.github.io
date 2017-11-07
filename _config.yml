@@ -1,2 +1,3 @@
 name: Naveen Koti, Day Dreamer
 markdown: kramdown
+permalink: /blog/:year/:month/:day/:title
