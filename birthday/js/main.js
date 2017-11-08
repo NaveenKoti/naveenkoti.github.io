@@ -21,11 +21,11 @@ CandleBlower = function() {
   var decision;
   if(n==1)
   {
-    decision = "./img/boy.png";
+    decision = "/boy.png";
   }
   else if(n==2)
   {
-    decision = "./img/girl.png";
+    decision = "/girl.png";
   }
   // var decision = (n==1?"/boy.png":"girl.png");
 
