@@ -27,8 +27,6 @@ CandleBlower = function() {
   {
     decision = "/girl.png";
   }
-  // var decision = (n==1?"/boy.png":"girl.png");
-
   this.setup = function() {
     var i, screenThirds, _i, _j;
     screenThirds = (jaws.width - 100) / 3;
@@ -69,7 +67,6 @@ CandleBlower = function() {
       candle.draw();
     }
     if (drawWind) {
-      // console.log("Blowing");
       wind.x = candleX[curPos] - wind.image.width / 2;
       wind.draw();
     }
@@ -88,8 +85,6 @@ CandleBlower = function() {
       }
       if (!oneLeft) {
         parent.winstate = true;
-        // drawText("Happy Birthday!");
-        //console.log("WINNNER!");
       } else {
         //console.log("LOSER");
         parent.winstate = false;
@@ -107,7 +102,6 @@ CandleBlower = function() {
           pressed = true;
         }
         if (jaws.pressed("space")) {
-          // console.log("Blow");
           blow();
           blowOutCandle(curPos);
           pressed = true;
@@ -170,7 +164,6 @@ jaws.onload = function() {
   {
     decision = "/girl.png";
   }
-   // var decision = (n==1?"/boy.png":"girl.png");
   jaws.assets.add(imgDir + decision);
   jaws.assets.add(imgDir + "/candle-lit.png");
   jaws.assets.add(imgDir + "/candle-unlit.png");
