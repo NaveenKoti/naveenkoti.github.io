@@ -1,0 +1,406 @@
+<html>
+    <head>
+        <script>
+        var MINILocalTracking;
+
+            (function () {
+                // global
+                MINILocalTracking = {
+                    version: '1.0.0',
+                    isTrackingDisabledData: undefined,
+                    parentPage: undefined,
+
+                    _log: (function () {
+                        return {
+                            debug: function () {
+                                if (typeof console === 'undefined') {
+                                    return;
+                                }
+                                console.info.apply(this, arguments);
+                            },
+                            error: function () {
+                                if (typeof console === 'undefined') {
+                                    return;
+                                }
+                                console.error.apply(this, arguments);
+                            }
+                        };
+                    })(),
+
+                    _postMessageQueue: [],
+                    _postMessage: function (childOrigin, data, forceDirectPost) {
+                        var message = {
+                            childOrigin: childOrigin,
+                            actions: [{
+                                action: 'analytics',
+                                params: {
+                                    call: childOrigin,
+                                    data: data
+                                }
+                            }],
+                            callback: true
+                        };
+
+                        if (typeof (MINILocalTracking._currentPageIndex) !== 'undefined') {
+                            // Add page index as page ID property
+                            // FYI: Even though there are both page ID (can be obtained with 'getAllPages') and page index params
+                            // the parent window expects the indices in the 'pageId' property, so they are not consistent.
+                            message.pageId = MINILocalTracking._currentPageIndex;
+                            message.actions[0].params.data.pageId = MINILocalTracking._currentPageIndex;
+                        }
+
+                        try {
+                            // don't queue if currentPageIndex is already available
+                            if (typeof (MINILocalTracking._currentPageIndex) !== 'undefined' || forceDirectPost) {
+                                if (typeof (MINILocalTracking._currentPageIndex) !== 'undefined') {
+                                    MINILocalTracking._postMessageQueueSend();
+                                }
+                                // window.x.postMessage method expects a string.
+                                message = JSON.stringify(message);
+                                window.top.postMessage(message, '*');
+                                MINILocalTracking._log.debug('_postMessage: sent message', message);
+                            } else {
+                                this._postMessageQueue.push(message);
+                            }
+                        } catch (ex) {
+                            MINILocalTracking._log.error('_postMessage: could not parse JSON');
+                        }
+                    },
+
+                    _postMessageQueueSend: function () {
+                        // waiting for the pageId
+                        if (typeof (MINILocalTracking._currentPageIndex) === 'undefined') {
+                            return;
+                        }
+
+                        for (var i = 0; i < MINILocalTracking._postMessageQueue.length; i++) {
+                            var message = MINILocalTracking._postMessageQueue.shift();
+
+                            message.pageId = MINILocalTracking._currentPageIndex;
+                            message.actions[0].params.data.pageId = MINILocalTracking._currentPageIndex;
+                            // window.x.postMessage method expects a string.
+                            message = JSON.stringify(message);
+                            window.top.postMessage(message, '*');
+                            MINILocalTracking._log.debug('_postMessage: sent message', message);
+                        }
+                    },
+
+                    _processReceivedMessage: function (ev) {
+                        // TODO: should also filter by origin
+                        // Response should be a valid JSON string
+                        try {
+                            var data;
+                            data = JSON.parse(ev.data);
+
+                            MINILocalTracking._log.debug('_processReceivedMessage: received this response from parent window', data);
+
+                            // Only one message means only one response
+                            var actionResponse = data.actionResponse[0];
+
+                            // We only react to responses from 'analytics' actions
+                            if (actionResponse.action !== 'analytics') {
+                                MINILocalTracking._log.error('_processReceivedMessage: message not related to analytics, ignoring', data);
+                                return;
+                            }
+
+                            // Don't bother to continue if the requested action failed
+                            if (actionResponse.success !== true) {
+                                MINILocalTracking._log.error('_processReceivedMessage: something went wrong.', data);
+                                return;
+                            }
+
+                            if (actionResponse.result.call === 'getCurrentPageIndex') {
+                                MINILocalTracking._currentPageIndex = actionResponse.result.data || 0;
+                            }
+
+                            if (actionResponse.result.call === 'isTrackingDisabled') {
+                                if (MINILocalTracking.isTrackingDisabledCallback) {
+                                    MINILocalTracking.isTrackingDisabledData = actionResponse.result.data;
+                                    MINILocalTracking.isTrackingDisabledCallback(MINILocalTracking.isTrackingDisabledData);
+                                }
+                            }
+
+                            if (actionResponse.result.call === 'getPageObject') {
+
+                                MINILocalTracking.parentPage = {
+                                    "destinationUrl": actionResponse.result.data.page.pageInfo.destinationUrl
+                                }
+                                if (MINILocalTracking.getParentPageCallback) {
+                                    MINILocalTracking.getParentPageCallback(MINILocalTracking.parentPage);
+                                }
+                            }
+
+                        } catch (ex) {
+                            MINILocalTracking._log.error('_processReceivedMessage: could not parse event data as JSON, ignoring', ev.data, ex);
+                        }
+
+                        MINILocalTracking._postMessageQueueSend();
+                    },
+
+                    _currentPageIndex: undefined,
+                    _requestCurrentPageIndex: function () {
+                        if (typeof (MINILocalTracking._currentPageIndex) === 'undefined') {
+                            MINILocalTracking._postMessage('getCurrentPageIndex', {}, true);
+                        }
+                    },
+
+
+                    isTrackingDisabled: function (callback) {
+                        MINILocalTracking.isTrackingDisabledCallback = callback;
+                        if (MINILocalTracking.isTrackingDisabledData === undefined) {
+                            MINILocalTracking._postMessage('isTrackingDisabled', {}, true);
+                        } else {
+                            callback(MINILocalTracking.isTrackingDisabledData);
+                        }
+                    },
+
+                    getParentPage: function (callback) {
+                        MINILocalTracking.getParentPageCallback = callback;
+                        if (MINILocalTracking.parentPage === undefined) {
+                            MINILocalTracking._postMessage('getPageObject', {
+                                pageId: MINILocalTracking._currentPageIndex
+                            });
+                        } else {
+                            callback(MINILocalTracking.parentPage);
+                        }
+                    },
+
+                };
+
+                var localForm = {
+                    _config: {},
+                    _config_persistent: {},
+
+                    _config_merged: function () {
+                        var merged = this._config;
+                        for (var attrName in this._config_persistent) {
+                            merged[attrName] = this._config_persistent[attrName];
+                        }
+                        return merged;
+                    },
+
+                    _buildEffectString: function (deliveryType) {
+                        if (!deliveryType || typeof this._config.effect_initial === 'undefined') {
+                            this._config_persistent.effect = this._config.effect_initial;
+                        } else {
+                            this._config_persistent.effect = this._config.effect_initial + deliveryType;
+                        }
+                    },
+
+                    config: function (obj) {
+                        this._config = {
+                            componentID: obj.componentID,
+                            componentName: obj.componentName,
+                            subCategory01: obj.subCategory01,
+                            formType: obj.formType,
+                            brochureDeliveryType: obj.brochureDeliveryType,
+                            effect_initial: obj.effect,
+                            formNature: 'local',
+                            libraryVersion: MINILocalTracking.version
+                        };
+
+                        // Listen for feedback from our parent page (incoming window.postMessage() Javascript events)
+                        if (window.addEventListener) {
+                            window.addEventListener('message', MINILocalTracking._processReceivedMessage, false);
+                        } else {
+                            // IE8 is such a nice guy...
+                            window.attachEvent('onmessage', MINILocalTracking._processReceivedMessage);
+                        }
+
+                        this._buildEffectString(this._config.brochureDeliveryType);
+                    },
+
+                    initComponentTracking: function (config) {
+                        // init Component
+                        var componentTrackingObject = {
+                            componentInfo: {
+                                componentID: config.componentID,
+                                componentName: config.componentName
+                            },
+                            category: {
+                                primaryCategory: 'forms',
+                                subCategory01: config.subCategory01
+                            },
+                            attributes: {
+                                formCaptchaPresent: false,
+                                formHiddenFieldFilled: false,
+                                formType: config.formType,
+                                brochureDeliveryType: config.brochureDeliveryType,
+                                brochureList: config.brochureList,
+                                formNature: 'local',
+                                libraryVersion: MINILocalTracking.version
+                            }
+                        };
+
+                        MINILocalTracking._postMessage('initComponentTracking', {
+                            pageId: MINILocalTracking._currentPageIndex,
+                            obj: componentTrackingObject
+                        }, true);
+                    },
+
+                    start: function () {
+                        var config = this._config_merged();
+
+                        // init component
+                        this.initComponentTracking(config);
+                        MINILocalTracking._requestCurrentPageIndex();
+
+                        // sent start Form event
+                        var elementTrackingEventObject = {
+                            eventInfo: {
+                                eventName: 'open form',
+                                eventAction: '',
+                                eventPoints: 0,
+                                timeStamp: '' + Math.round(+new Date()),
+                                cause: 'default',
+                                effect: 'user is shown form'
+                            },
+                            category: {
+                                primaryCategory: 'form navigation'
+                            },
+                            attributes: {
+                                relatedComponentID: config.componentID,
+                                relatedComponentName: config.componentName,
+                                relatedComponentPrimaryCategory: 'forms',
+                                // formNature: 'local'
+                            }
+                        };
+
+                        MINILocalTracking._postMessage('addEventTracking', {
+                            pageId: MINILocalTracking._currentPageIndex,
+                            elementObj: elementTrackingEventObject, // parent needs a param called 'elementObj'
+                            defaultObj: {},
+                        });
+                    },
+
+                    setDeliveryType: function (deliveryType) {
+                        var valid = ['post', 'download'];
+                        if (valid.indexOf(deliveryType) < 0) {
+                            MINILocalTracking._log.error(
+                                'Unkown value "' + deliveryType + '" for parameter "deliveryType" for method "setDeliveryType"',
+                                'Use one of ', valid);
+                        } else {
+                            this._buildEffectString(deliveryType);
+                            this._config_persistent.brochureDeliveryType = deliveryType;
+                        }
+                    },
+
+                    setBrochureList: function (brochureList) {
+                        if (!Array.isArray(brochureList)) {
+                            MINILocalTracking._log.error('Parameter "brochureList" for method "setBrochureList" needs to be an Array of strings');
+                        } else {
+                            this._config_persistent.brochureList = brochureList;
+                        }
+                    },
+
+                    submit: function () {
+                        var config = this._config_merged();
+
+                        // init component
+                        this.initComponentTracking(config);
+                        MINILocalTracking._requestCurrentPageIndex();
+
+                        // sent start Form event
+                        var elementTrackingEventObject = {
+                            eventInfo: {
+                                eventName: 'submit form',
+                                eventAction: 'click',
+                                eventPoints: 0,
+                                timeStamp: '' + Math.round(+new Date()),
+                                cause: 'default',
+                                effect: config.effect
+                            },
+                            category: {
+                                primaryCategory: 'form navigation',
+                            },
+                            attributes: {
+                                relatedComponentID: config.componentID,
+                                relatedComponentName: config.componentName,
+                                relatedComponentPrimaryCategory: 'forms',
+                                // formNature: 'local'
+                            }
+                        };
+
+                        MINILocalTracking._postMessage('addEventTracking', {
+                            pageId: MINILocalTracking._currentPageIndex,
+                            elementObj: elementTrackingEventObject, // parent needs a param called 'elementObj'
+                            defaultObj: {}
+                        });
+
+
+                    },
+
+                    interaction: function () {
+                        var config = this._config_merged();
+
+                        // init component
+                        this.initComponentTracking(config);
+                        MINILocalTracking._requestCurrentPageIndex();
+
+                        // sent start Form event
+                        var elementTrackingEventObject = {
+                            eventInfo: {
+                                eventName: 'form interaction',
+                                eventAction: 'click',
+                                eventPoints: 0,
+                                timeStamp: '' + Math.round(+new Date()),
+                                cause: 'default',
+                                effect: config.effect
+                            },
+                            category: {
+                                primaryCategory: 'form navigation',
+                            },
+                            attributes: {
+                                relatedComponentID: config.componentID,
+                                relatedComponentName: config.componentName,
+                                relatedComponentPrimaryCategory: 'forms',
+                                // formNature: 'local'
+                            }
+                        };
+
+                        MINILocalTracking._postMessage('addEventTracking', {
+                            pageId: MINILocalTracking._currentPageIndex,
+                            elementObj: elementTrackingEventObject, // parent needs a param called 'elementObj'
+                            defaultObj: {}
+                        });
+                    }
+                };
+
+                // bind local scoped into global
+                MINILocalTracking.localForm = localForm;
+
+            })();
+
+            //module.exports = MINILocalTracking;
+        </script>
+        <script>
+        MINILocalTracking.localForm.config({
+            componentID: 'NEWSLETTER-1588938337422',
+            componentName: 'NEWSLETTER form',
+            subCategory01: 'NEWSLETTER',
+            formType: 'lead',
+            brochureDeliveryType: undefined,
+            effect: 'interacted - NEWSLETTER form'
+        }); 
+        function triggerInteraction() { if(typeof window.interacted =='undefined'){MINILocalTracking.localForm.interaction();window.interacted=true;}}
+        </script>
+    </head>
+    <body>
+    <form accept-charset="UTF-8" action="" autocomplete="off" method="GET" target="_blank">
+	<fieldset>
+	<legend>Title:</legend>
+	<label for="name">Name</label><br /> 
+	<input name="name" type="text" value="Frank" onfocus="triggerInteraction()" /> <br /> 
+	<input checked="checked" name="sex" type="radio" value="male" onclick="triggerInteraction();" /> Male <br /> 
+	<input name="sex" type="radio" value="female" onclick="triggerInteraction();" /> Female <br />  
+	<textarea cols="30" rows="2">Long text.</textarea><br /> 
+	<select onchange="triggerInteraction()">
+		<option selected="selected" value="1">Yes</option>
+		<option value="2">No</option>
+	</select><br /> 
+	<input name="democheckbox" type="checkbox" value="1" onclick="triggerInteraction()" /> Checkbox<br /> 
+	<button type="submit" value="Submit" onclick="triggerInteraction()">Submit</button>
+	</fieldset>
+    </form>
+    </body>
+    </html>
