@@ -4,13 +4,13 @@
 //Display the css background
 function load(){
     showLoader();
-    var pathName = window.location.pathname.split('/');
+    /*var pathName = window.location.pathname.split('/');
     if(pathName[pathName.length-1].indexOf('.html') == -1){
         loadProfile(pathName[pathName.length-1]);
     }else{
         loadProfile('404');
-    }
-    //loadProfile('nvnkoti');
+    }*/
+    loadProfile('nvnkoti');
 }
 
 
